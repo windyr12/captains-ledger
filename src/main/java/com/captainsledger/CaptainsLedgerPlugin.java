@@ -28,7 +28,7 @@ import java.io.IOException;
 @PluginDescriptor(
 		name = "Skipper's Ledger",
 		description = "Manage deep sea trawling sessions - timers, payments, crew tracking",
-		tags = {"fishing", "trawling", "captain", "ledger", "trawlinghub"},
+		tags = {"fishing", "trawling", "captain", "ledger", "trawlinghub", "sailing"},
 		enabledByDefault = true
 )
 public class CaptainsLedgerPlugin extends Plugin
