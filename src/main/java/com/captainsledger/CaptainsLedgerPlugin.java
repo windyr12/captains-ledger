@@ -20,11 +20,15 @@ import javax.imageio.ImageIO;
 
 import java.io.IOException;
 
+/*
+ * This plugin was developed with the name "Captain's Ledger" but was changed
+ * to "Skipper's Ledger" to avoid confusion with the already existing "Captain's Log" plugin.
+ */
 
 @PluginDescriptor(
-		name = "Captain's Ledger",
-		description = "Manage deep sea trawling sessions - timers, payments, crew tracking & anti-stealing",
-		tags = {"fishing", "trawling", "ironman", "captain", "ledger"},
+		name = "Skipper's Ledger",
+		description = "Manage deep sea trawling sessions - timers, payments, crew tracking",
+		tags = {"fishing", "trawling", "captain", "ledger", "trawlinghub"},
 		enabledByDefault = true
 )
 public class CaptainsLedgerPlugin extends Plugin
@@ -49,7 +53,7 @@ public class CaptainsLedgerPlugin extends Plugin
 		sessionManager.setPanelUpdateCallback(() -> SwingUtilities.invokeLater(panel::update));
 
 		navButton = NavigationButton.builder()
-				.tooltip("Captain's Ledger")
+				.tooltip("Skipper's Ledger")
 				.icon(createNavigationIcon())
 				.priority(10)
 				.panel(panel)
