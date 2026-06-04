@@ -395,13 +395,13 @@ public class CaptainsLedgerPanel extends PluginPanel {
             try {
                 java.io.InputStream inputStream = getClass().getResourceAsStream(iconPath);
                 if (inputStream == null) {
-                    System.out.println("Captain's Ledger: account icon resource not found: " + iconPath);
+                    System.out.println("Skipper's Ledger: account icon resource not found: " + iconPath);
                     continue;
                 }
 
                 BufferedImage image = ImageIO.read(inputStream);
                 if (image == null) {
-                    System.out.println("Captain's Ledger: account icon is not a readable image: " + iconPath);
+                    System.out.println("Skipper's Ledger: account icon is not a readable image: " + iconPath);
                     continue;
                 }
 
@@ -412,9 +412,9 @@ public class CaptainsLedgerPanel extends PluginPanel {
                 );
 
                 accountIcons.put(accountType, new ImageIcon(scaled));
-                System.out.println("Captain's Ledger: loaded account icon " + accountType + " from " + iconPath);
+                System.out.println("Skipper's Ledger: loaded account icon " + accountType + " from " + iconPath);
             } catch (IOException | IllegalArgumentException e) {
-                System.out.println("Captain's Ledger: unable to load account icon " + iconPath);
+                System.out.println("Skipper's Ledger: unable to load account icon " + iconPath);
                 e.printStackTrace();
             }
         }
@@ -541,7 +541,7 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private void copyToClipboard() {
-        StringBuilder sb = new StringBuilder("**Captain's Ledger - Trip Summary**\n\n");
+        StringBuilder sb = new StringBuilder("Skipper's Ledger - Trip Summary**\n\n");
 
         sessionManager.getSessions().values().stream()
                 .filter(PlayerSession::isDone)

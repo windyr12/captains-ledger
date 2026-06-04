@@ -17,15 +17,4 @@ public interface CaptainsLedgerConfig extends Config
 	{
 		return 1_000_000;
 	}
-
-	@ConfigItem(
-			keyName = "defaultDepositing",
-			name = "Default as Depositing",
-			description = "New players start marked as depositing",
-			position = 2
-	)
-	default boolean defaultDepositing()
-	{
-		return true;
-	}
 }

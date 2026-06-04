@@ -503,10 +503,12 @@ public class LedgerSessionManager
             return;
         }
 
-        if (accountType.isIronman())
+        if (accountType == AccountType.UNKNOWN)
         {
-            session.setIsDepositing(false);
+            return;
         }
+
+        session.setIsDepositing(!accountType.isIronman());
     }
 
     private AccountType lookupAccountType(String username)

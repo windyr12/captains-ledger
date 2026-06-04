@@ -46,7 +46,7 @@ public class CaptainsLedgerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		System.out.println("=== Captain's Ledger STARTING ===");
+		System.out.println("=== Skipper's Ledger STARTING ===");
 
 		sessionManager = new LedgerSessionManager(client, hiscoreClient);
 		panel = new CaptainsLedgerPanel(this, sessionManager, config);
@@ -61,7 +61,7 @@ public class CaptainsLedgerPlugin extends Plugin
 
 		clientToolbar.addNavigation(navButton);
 
-		System.out.println("=== Captain's Ledger STARTED ===");
+		System.out.println("=== Skipper's Ledger STARTED ===");
 	}
 
 	@Override
@@ -126,7 +126,7 @@ public class CaptainsLedgerPlugin extends Plugin
 		}
 		catch (IOException | IllegalArgumentException e)
 		{
-			throw new RuntimeException("Unable to load Captain's Ledger icon", e);
+			throw new RuntimeException("Unable to load Skipper's Ledger icon", e);
 		}
 	}
 
