@@ -2,6 +2,7 @@ package com.captainsledger;
 
 import com.google.inject.Provides;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.PlayerSpawned;
@@ -25,6 +26,7 @@ import java.io.IOException;
  * to "Skipper's Ledger" to avoid confusion with the already existing "Captain's Log" plugin.
  */
 
+@Slf4j
 @PluginDescriptor(
 		name = "Skipper's Ledger",
 		description = "Manage deep sea trawling sessions - timers, payments, crew tracking",
@@ -46,7 +48,7 @@ public class CaptainsLedgerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		System.out.println("=== Skipper's Ledger STARTING ===");
+		log.debug("Skipper's Ledger starting");
 
 		sessionManager = new LedgerSessionManager(client, hiscoreClient);
 		panel = new CaptainsLedgerPanel(this, sessionManager, config);
@@ -61,7 +63,7 @@ public class CaptainsLedgerPlugin extends Plugin
 
 		clientToolbar.addNavigation(navButton);
 
-		System.out.println("=== Skipper's Ledger STARTED ===");
+		log.debug("Skipper's Ledger started");
 	}
 
 	@Override

@@ -1,5 +1,6 @@
 package com.captainsledger;
 
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.Text;
@@ -11,15 +12,13 @@ import java.awt.datatransfer.StringSelection;
 import java.util.Comparator;
 import javax.imageio.ImageIO;
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.Map;
 
+@Slf4j
 public class CaptainsLedgerPanel extends PluginPanel {
     private static final int ACCOUNT_ICON_SIZE = 16;
     private static final int NAME_COLUMN_WIDTH = 10;
@@ -395,13 +394,13 @@ public class CaptainsLedgerPanel extends PluginPanel {
             try {
                 java.io.InputStream inputStream = getClass().getResourceAsStream(iconPath);
                 if (inputStream == null) {
-                    System.out.println("Skipper's Ledger: account icon resource not found: " + iconPath);
+                    log.debug("Skipper's Ledger account icon resource not found: {}", iconPath);
                     continue;
                 }
 
                 BufferedImage image = ImageIO.read(inputStream);
                 if (image == null) {
-                    System.out.println("Skipper's Ledger: account icon is not a readable image: " + iconPath);
+                    log.debug("Skipper's Ledger account icon is not a readable image: {}", iconPath);
                     continue;
                 }
 
@@ -412,10 +411,9 @@ public class CaptainsLedgerPanel extends PluginPanel {
                 );
 
                 accountIcons.put(accountType, new ImageIcon(scaled));
-                System.out.println("Skipper's Ledger: loaded account icon " + accountType + " from " + iconPath);
+                log.debug("Skipper's Ledger loaded account icon {} from {}", accountType, iconPath);
             } catch (IOException | IllegalArgumentException e) {
-                System.out.println("Skipper's Ledger: unable to load account icon " + iconPath);
-                e.printStackTrace();
+                log.warn("Skipper's Ledger unable to load account icon {}", iconPath, e);
             }
         }
     }
