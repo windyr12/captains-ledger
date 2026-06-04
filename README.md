@@ -18,7 +18,5 @@ A plugin for tracking community trawling trips. Essentially a taximeter for iron
 - If a player whose trip has ended returns, their timer will continue and they will appear as active crew after 2 minutes.
 - If a player returns after being marked as paid, their timer and GP owed will restart from 0.
 
-**Captain's Ledger - Trip Summary**
 
-Valfadr      | 0h 00m | 13k | Paid
 
