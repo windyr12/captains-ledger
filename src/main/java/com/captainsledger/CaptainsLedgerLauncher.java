@@ -1,5 +1,5 @@
 
-/**
+/*
  * Development launcher for running this plugin locally from the IDE/Gradle.
  * Not used by RuneLite when the plugin is loaded normally.
  */

@@ -1,5 +1,8 @@
 package com.captainsledger;
 
+import lombok.Getter;
+
+@Getter
 public enum AccountType
 {
     UNKNOWN(null),
@@ -13,11 +16,6 @@ public enum AccountType
     AccountType(String iconPath)
     {
         this.iconPath = iconPath;
-    }
-
-    public String getIconPath()
-    {
-        return iconPath;
     }
 
     public boolean isIronman()
