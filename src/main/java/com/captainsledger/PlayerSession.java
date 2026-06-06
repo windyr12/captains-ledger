@@ -51,6 +51,18 @@ public class PlayerSession
     @Setter
     @Getter
     private AccountType accountType = AccountType.UNKNOWN;
+    @Setter
+    @Getter
+    private boolean awaitingPaymentConfirmation = false;
+    @Setter
+    @Getter
+    private long paymentBaselineSeconds = 0;
+    @Setter
+    @Getter
+    private long pendingPaymentSeconds = 0;
+    @Setter
+    @Getter
+    private boolean waitingForCrewSlot = false;
 
     public PlayerSession(String username, boolean isDepositing)
     {
@@ -71,14 +83,9 @@ public class PlayerSession
 
     public long getTotalSeconds()
     {
-        if (isOnBoat && joinTime != null)
+        if (joinTime != null)
         {
             return accumulatedSeconds + Duration.between(joinTime, Instant.now()).getSeconds();
-        }
-
-        if (!done && leftBoatTime != null && gracePeriodEnd != null && Instant.now().isBefore(gracePeriodEnd))
-        {
-            return accumulatedSeconds + Duration.between(leftBoatTime, Instant.now()).getSeconds();
         }
 
         return accumulatedSeconds;
@@ -93,11 +100,4 @@ public class PlayerSession
 
         return getTotalSeconds();
     }
-
-
-
-
-
-
-
 }

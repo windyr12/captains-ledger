@@ -5,16 +5,15 @@ import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.Text;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
-import java.awt.datatransfer.StringSelection;
-import java.util.Comparator;
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -24,7 +23,7 @@ public class CaptainsLedgerPanel extends PluginPanel {
     private static final int NAME_COLUMN_WIDTH = 10;
     private static final int DEP_COLUMN_WIDTH = 34;
     private static final int PAID_COLUMN_WIDTH = 34;
-    private static final int ACTION_COLUMN_WIDTH = 54;
+    private static final int ACTION_COLUMN_WIDTH = 58;
     private static final int ROW_HEIGHT_ACTIVE = 62;
     private static final int ROW_HEIGHT_ENDED = 50;
 
@@ -33,15 +32,21 @@ public class CaptainsLedgerPanel extends PluginPanel {
 
     private final JPanel playersPanel = new JPanel();
     private final JPanel endedPlayersPanel = new JPanel();
+    private final JPanel ignoredPlayersPanel = new JPanel();
+    private final JPanel ignoredSection = new JPanel(new BorderLayout());
     private final JTextField hourlyRateField = new JTextField(8);
     private final JButton startButton = new JButton("Start Trip");
     private final JButton endButton = new JButton("End Trip");
     private final JLabel totalOwedLabel = new JLabel("Total GP: 0k");
+    private final TitledBorder activeCrewBorder = BorderFactory.createTitledBorder("Active Crew (0/9)");
+    private final ImageIcon coinsIcon;
 
     public CaptainsLedgerPanel(CaptainsLedgerPlugin plugin, LedgerSessionManager sessionManager, CaptainsLedgerConfig config) {
         final JButton resetButton = new JButton("Reset All");
+        final JButton addTestPlayersButton = new JButton("Add Test Crew");
         this.sessionManager = sessionManager;
         loadAccountIcons();
+        coinsIcon = loadIcon("/icons/coins.png", 16, 16);
 
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -85,6 +90,18 @@ public class CaptainsLedgerPanel extends PluginPanel {
         resetButton.addActionListener(e -> resetAll());
         topPanel.add(resetButton, c);
 
+        /* ADD THIS TO TEST WITH FULL CREW
+        c.gridx = 0;
+        c.gridy = 3;
+        c.gridwidth = 2;
+        addTestPlayersButton.addActionListener(e -> {
+            sessionManager.addTestPlayers();
+            update();
+        });
+        */
+
+        topPanel.add(addTestPlayersButton, c);
+
         JLabel titleLabel = new JLabel("Skipper's Ledger");
         titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
         titleLabel.setForeground(Color.WHITE);
@@ -104,21 +121,28 @@ public class CaptainsLedgerPanel extends PluginPanel {
         endedPlayersPanel.setLayout(new BoxLayout(endedPlayersPanel, BoxLayout.Y_AXIS));
         endedPlayersPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
+        ignoredPlayersPanel.setLayout(new BoxLayout(ignoredPlayersPanel, BoxLayout.Y_AXIS));
+        ignoredPlayersPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
         JPanel listsPanel = new JPanel();
         listsPanel.setLayout(new BoxLayout(listsPanel, BoxLayout.Y_AXIS));
         listsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
         JPanel activeSection = new JPanel(new BorderLayout());
         activeSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
-        activeSection.setBorder(BorderFactory.createTitledBorder("Active Crew"));
+        activeSection.setBorder(activeCrewBorder);
         activeSection.add(createActiveHeaderRow(), BorderLayout.NORTH);
         activeSection.add(playersPanel, BorderLayout.CENTER);
 
         JPanel endedSection = new JPanel(new BorderLayout());
         endedSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
-        endedSection.setBorder(BorderFactory.createTitledBorder("Ended Trips"));
+        endedSection.setBorder(BorderFactory.createTitledBorder("Payment Owed"));
         endedSection.add(createEndedHeaderRow(), BorderLayout.NORTH);
         endedSection.add(endedPlayersPanel, BorderLayout.CENTER);
+
+        ignoredSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
+        ignoredSection.setBorder(BorderFactory.createTitledBorder("Ignored Players"));
+        ignoredSection.add(ignoredPlayersPanel, BorderLayout.CENTER);
 
         listsPanel.add(activeSection);
         listsPanel.add(Box.createVerticalStrut(8));
@@ -150,16 +174,34 @@ public class CaptainsLedgerPanel extends PluginPanel {
     public void update() {
         playersPanel.removeAll();
         endedPlayersPanel.removeAll();
+        ignoredPlayersPanel.removeAll();
+
+        activeCrewBorder.setTitle("Active Crew ("
+                + sessionManager.getActiveCrewCount()
+                + "/"
+                + sessionManager.getMaxActiveCrew()
+                + ")");
 
         sessionManager.getSessions().values().stream()
-                .filter(session -> !session.isDone())
                 .sorted(Comparator.comparing(PlayerSession::getUsername))
                 .forEach(session -> playersPanel.add(createPlayerRow(session)));
 
-        sessionManager.getSessions().values().stream()
-                .filter(PlayerSession::isDone)
-                .sorted(Comparator.comparing(PlayerSession::getUsername))
-                .forEach(session -> endedPlayersPanel.add(createEndedPlayerRow(session)));
+        sessionManager.getPaymentOwed().values().stream()
+                .sorted(Comparator.comparing(LedgerSessionManager.PaymentOwed::getUsername))
+                .forEach(payment -> endedPlayersPanel.add(createPaymentOwedRow(payment)));
+
+        sessionManager.getIgnoredPlayers().stream()
+                .sorted(String::compareToIgnoreCase)
+                .forEach(username -> ignoredPlayersPanel.add(createIgnoredPlayerRow(username)));
+
+        Container parent = ignoredSection.getParent();
+        if (sessionManager.hasIgnoredPlayers() && parent == null) {
+            JPanel listsPanel = (JPanel) ((JScrollPane) getComponent(1)).getViewport().getView();
+            listsPanel.add(Box.createVerticalStrut(8));
+            listsPanel.add(ignoredSection);
+        } else if (!sessionManager.hasIgnoredPlayers() && parent != null) {
+            parent.remove(ignoredSection);
+        }
 
         boolean active = sessionManager.isTripActive();
         boolean hasExistingSessions = sessionManager.hasSessions();
@@ -176,17 +218,24 @@ public class CaptainsLedgerPanel extends PluginPanel {
         endedPlayersPanel.revalidate();
         endedPlayersPanel.repaint();
 
+        ignoredPlayersPanel.revalidate();
+        ignoredPlayersPanel.repaint();
+
         revalidate();
         repaint();
     }
 
     private JPanel createPlayerRow(PlayerSession session) {
+        if (!session.isDepositing() && session.isAwaitingPaymentConfirmation()) {
+            return createPaymentConfirmationRow(session);
+        }
+
         JPanel row = new JPanel(new BorderLayout(4, 0));
         row.setBorder(new EmptyBorder(3, 3, 3, 3));
         row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT_ACTIVE));
 
-        long owed = calculateOwed(session);
+        long owed = sessionManager.calculateCurrentOwed(session);
         String timeStr = formatTime(session.getDisplayedSeconds());
         String moneyText = session.isDepositing() ? "" : " | " + formatMoneyK(owed);
         String safeName = Text.escapeJagex(session.getUsername());
@@ -201,6 +250,7 @@ public class CaptainsLedgerPanel extends PluginPanel {
         JCheckBox depositingBox = new JCheckBox();
         depositingBox.setToolTipText("Depositing");
         depositingBox.setSelected(session.isDepositing());
+        depositingBox.setEnabled(!session.isWaitingForCrewSlot());
         depositingBox.setHorizontalAlignment(SwingConstants.CENTER);
         depositingBox.setMargin(new Insets(0, 0, 0, 0));
         depositingBox.setOpaque(false);
@@ -209,13 +259,10 @@ public class CaptainsLedgerPanel extends PluginPanel {
             update();
         });
 
-        JButton endPlayerBtn = createCompactButton("End", "End this player's trip");
-        endPlayerBtn.addActionListener(e -> {
-            sessionManager.endPlayerTrip(session.getUsername());
-            update();
-        });
-
-        JButton deleteBtn = createDeleteButton(session);
+        JButton actionButton = session.isDepositing()
+                ? createEndDepositingTripButton(session)
+                : createCalculatePaymentButton(session);
+        actionButton.setEnabled(!session.isWaitingForCrewSlot());
 
         JPanel left = new JPanel(new BorderLayout(4, 0));
         left.setOpaque(false);
@@ -230,20 +277,11 @@ public class CaptainsLedgerPanel extends PluginPanel {
         depColumn.setMaximumSize(new Dimension(DEP_COLUMN_WIDTH, ROW_HEIGHT_ACTIVE));
         depColumn.add(depositingBox);
 
-        JPanel actions = new JPanel();
+        JPanel actions = new JPanel(new GridBagLayout());
         actions.setOpaque(false);
-        actions.setLayout(new BoxLayout(actions, BoxLayout.Y_AXIS));
         actions.setPreferredSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ACTIVE));
         actions.setMaximumSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ACTIVE));
-
-        endPlayerBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        deleteBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        actions.add(Box.createVerticalGlue());
-        actions.add(endPlayerBtn);
-        actions.add(Box.createVerticalStrut(2));
-        actions.add(deleteBtn);
-        actions.add(Box.createVerticalGlue());
+        actions.add(actionButton);
 
         JPanel right = new JPanel(new BorderLayout(2, 0));
         right.setOpaque(false);
@@ -258,37 +296,100 @@ public class CaptainsLedgerPanel extends PluginPanel {
         return row;
     }
 
-    private JPanel createEndedPlayerRow(PlayerSession session) {
+    private JPanel createPaymentConfirmationRow(PlayerSession session) {
+        JPanel row = new JPanel(new BorderLayout(4, 0));
+        row.setBorder(new EmptyBorder(3, 3, 3, 3));
+        row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT_ACTIVE));
+
+        String safeName = Text.escapeJagex(session.getUsername());
+        JLabel label = new JLabel("<html><b>" + safeName + "</b><br>Continue trip?</html>");
+        label.setForeground(Color.WHITE);
+
+        JPanel left = new JPanel(new BorderLayout(4, 0));
+        left.setOpaque(false);
+        left.setPreferredSize(new Dimension(NAME_COLUMN_WIDTH + ACCOUNT_ICON_SIZE + 8, ROW_HEIGHT_ACTIVE));
+        left.setMaximumSize(new Dimension(NAME_COLUMN_WIDTH + ACCOUNT_ICON_SIZE + 8, ROW_HEIGHT_ACTIVE));
+        left.add(createAccountIconLabel(session), BorderLayout.WEST);
+        left.add(label, BorderLayout.CENTER);
+
+        JButton yesButton = createCompactButton("Yes", "Add payment owed and continue trip for this player");
+        yesButton.addActionListener(e -> {
+            sessionManager.confirmPaymentAndContinue(session.getUsername());
+            update();
+        });
+
+        JButton noButton = createCompactButton("No", "Add payment owed and remove from active crew");
+        noButton.addActionListener(e -> {
+            sessionManager.confirmPaymentAndRemove(session.getUsername());
+            update();
+        });
+
+        JButton cancelButton = createCompactButton("×", "Cancel");
+        cancelButton.setForeground(Color.RED);
+        cancelButton.addActionListener(e -> {
+            sessionManager.cancelPaymentCalculation(session.getUsername());
+            update();
+        });
+
+        JPanel yesNoButtons = new JPanel();
+        yesNoButtons.setOpaque(false);
+        yesNoButtons.setLayout(new BoxLayout(yesNoButtons, BoxLayout.Y_AXIS));
+
+        yesButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        noButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        yesNoButtons.add(Box.createVerticalGlue());
+        yesNoButtons.add(yesButton);
+        yesNoButtons.add(Box.createVerticalStrut(2));
+        yesNoButtons.add(noButton);
+        yesNoButtons.add(Box.createVerticalGlue());
+
+        JPanel cancelColumn = new JPanel(new GridBagLayout());
+        cancelColumn.setOpaque(false);
+        cancelColumn.setPreferredSize(new Dimension(24, ROW_HEIGHT_ACTIVE));
+        cancelColumn.setMaximumSize(new Dimension(24, ROW_HEIGHT_ACTIVE));
+        cancelColumn.add(cancelButton);
+
+        JPanel buttonColumns = new JPanel(new BorderLayout(2, 0));
+        buttonColumns.setOpaque(false);
+        buttonColumns.add(yesNoButtons, BorderLayout.CENTER);
+        buttonColumns.add(cancelColumn, BorderLayout.EAST);
+
+        row.add(left, BorderLayout.CENTER);
+        row.add(buttonColumns, BorderLayout.EAST);
+
+        return row;
+    }
+
+    private JPanel createPaymentOwedRow(LedgerSessionManager.PaymentOwed payment) {
         JPanel row = new JPanel(new BorderLayout(4, 0));
         row.setBorder(new EmptyBorder(3, 3, 3, 3));
         row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT_ENDED));
 
-        long owed = calculateOwed(session);
-        String owedText = session.isDepositing() ? "" : " | " + formatMoneyK(owed);
-        String timeStr = formatTime(session.getDisplayedSeconds());
-        String safeName = Text.escapeJagex(session.getUsername());
-        String nameColor = getPlayerNameColor(session);
+        String timeStr = formatTime(payment.getSeconds());
+        String safeName = Text.escapeJagex(payment.getUsername());
 
-        JLabel nameLabel = new JLabel("<html><b><font color='" + nameColor + "'>"
-                + safeName + "</font></b><br>" + timeStr + owedText + "</html>");
+        JLabel nameLabel = new JLabel("<html><b><font color='#ffcc55'>"
+                + safeName + "</font></b><br>" + timeStr + " | " + formatMoneyK(payment.getGp()) + "</html>");
         nameLabel.setPreferredSize(new Dimension(NAME_COLUMN_WIDTH, ROW_HEIGHT_ENDED - 8));
         nameLabel.setMaximumSize(new Dimension(NAME_COLUMN_WIDTH, ROW_HEIGHT_ENDED - 8));
 
         JCheckBox paidBox = new JCheckBox();
-        paidBox.setEnabled(!session.isDepositing());
-        paidBox.setSelected(session.isPaid());
+        paidBox.setSelected(payment.isPaid());
         paidBox.setMargin(new Insets(0, 0, 0, 0));
         paidBox.setOpaque(false);
-        paidBox.addActionListener(e -> sessionManager.setPaid(session.getUsername(), paidBox.isSelected()));
-
-        JButton deleteBtn = createDeleteButton(session);
+        paidBox.addActionListener(e -> {
+            sessionManager.setPaid(payment.getUsername(), paidBox.isSelected());
+            update();
+        });
 
         JPanel left = new JPanel(new BorderLayout(4, 0));
         left.setOpaque(false);
         left.setPreferredSize(new Dimension(NAME_COLUMN_WIDTH + ACCOUNT_ICON_SIZE + 8, ROW_HEIGHT_ENDED));
         left.setMaximumSize(new Dimension(NAME_COLUMN_WIDTH + ACCOUNT_ICON_SIZE + 8, ROW_HEIGHT_ENDED));
-        left.add(createAccountIconLabel(session), BorderLayout.WEST);
+        left.add(createAccountIconLabel(payment.getAccountType()), BorderLayout.WEST);
         left.add(nameLabel, BorderLayout.CENTER);
 
         JPanel paidColumn = new JPanel(new GridBagLayout());
@@ -297,21 +398,52 @@ public class CaptainsLedgerPanel extends PluginPanel {
         paidColumn.setMaximumSize(new Dimension(PAID_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
         paidColumn.add(paidBox);
 
-        JPanel actions = new JPanel(new GridBagLayout());
-        actions.setOpaque(false);
-        actions.setPreferredSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
-        actions.setMaximumSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
-        actions.add(deleteBtn);
+        JPanel emptyActionColumn = new JPanel();
+        emptyActionColumn.setOpaque(false);
+        emptyActionColumn.setPreferredSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
+        emptyActionColumn.setMaximumSize(new Dimension(ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
 
         JPanel right = new JPanel(new BorderLayout(2, 0));
         right.setOpaque(false);
         right.setPreferredSize(new Dimension(PAID_COLUMN_WIDTH + ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
         right.setMaximumSize(new Dimension(PAID_COLUMN_WIDTH + ACTION_COLUMN_WIDTH, ROW_HEIGHT_ENDED));
         right.add(paidColumn, BorderLayout.WEST);
-        right.add(actions, BorderLayout.EAST);
+        right.add(emptyActionColumn, BorderLayout.EAST);
 
         row.add(left, BorderLayout.CENTER);
         row.add(right, BorderLayout.EAST);
+
+        return row;
+    }
+
+
+    private JPanel createIgnoredPlayerRow(String username) {
+        JPanel row = new JPanel(new BorderLayout(4, 0));
+        row.setBorder(new EmptyBorder(3, 3, 3, 3));
+        row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+
+        JLabel nameLabel = new JLabel(Text.escapeJagex(username));
+        nameLabel.setForeground(Color.WHITE);
+
+        JButton removeButton = new JButton("Remove");
+        removeButton.setMargin(new Insets(0, 4, 0, 4));
+        removeButton.setPreferredSize(new Dimension(72, 20));
+        removeButton.setMaximumSize(new Dimension(72, 20));
+        removeButton.setToolTipText("Stop ignoring this player");
+        removeButton.addActionListener(e -> {
+            sessionManager.stopIgnoringPlayer(username);
+            update();
+        });
+
+        JPanel buttonPanel = new JPanel(new GridBagLayout());
+        buttonPanel.setOpaque(false);
+        buttonPanel.setPreferredSize(new Dimension(76, 26));
+        buttonPanel.setMaximumSize(new Dimension(76, 26));
+        buttonPanel.add(removeButton);
+
+        row.add(nameLabel, BorderLayout.CENTER);
+        row.add(buttonPanel, BorderLayout.EAST);
 
         return row;
     }
@@ -372,6 +504,10 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private String getPlayerNameColor(PlayerSession session) {
+        if (session.isWaitingForCrewSlot()) {
+            return "#888888";
+        }
+
         if (session.isDone()) {
             return "#ff5555";
         }
@@ -419,11 +555,14 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private JLabel createAccountIconLabel(PlayerSession session) {
+        return createAccountIconLabel(session.getAccountType());
+    }
+
+    private JLabel createAccountIconLabel(AccountType accountType) {
         JLabel iconLabel = new JLabel();
         iconLabel.setPreferredSize(new Dimension(ACCOUNT_ICON_SIZE + 4, ACCOUNT_ICON_SIZE));
         iconLabel.setMinimumSize(new Dimension(ACCOUNT_ICON_SIZE + 4, ACCOUNT_ICON_SIZE));
 
-        AccountType accountType = session.getAccountType();
         ImageIcon icon = accountIcons.get(accountType);
 
         if (icon != null) {
@@ -446,10 +585,6 @@ public class CaptainsLedgerPanel extends PluginPanel {
                 return "Hardcore Ironman";
             case ULTIMATE_IRONMAN:
                 return "Ultimate Ironman";
-            case GROUP_IRONMAN:
-                return "Group Ironman";
-            case HARDCORE_GROUP_IRONMAN:
-                return "Hardcore Group Ironman";
             case REGULAR:
                 return "Regular";
             case UNKNOWN:
@@ -458,25 +593,56 @@ public class CaptainsLedgerPanel extends PluginPanel {
         }
     }
 
-    private JButton createDeleteButton(PlayerSession session) {
-        JButton deleteBtn = new JButton("×");
-        deleteBtn.setForeground(Color.RED);
-        deleteBtn.setMargin(new Insets(0, 4, 0, 4));
-        deleteBtn.setPreferredSize(new Dimension(42, 18));
-        deleteBtn.setMaximumSize(new Dimension(42, 18));
-        deleteBtn.setToolTipText("Remove player");
-        deleteBtn.addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(this,
-                    "Remove " + session.getUsername() + " from the ledger?",
-                    "Confirm",
-                    JOptionPane.YES_NO_OPTION);
+    private JButton createCalculatePaymentButton(PlayerSession session) {
+        JButton button = new JButton();
 
-            if (confirm == JOptionPane.YES_OPTION) {
-                sessionManager.removePlayer(session.getUsername());
-                update();
-            }
+        if (coinsIcon != null) {
+            button.setIcon(coinsIcon);
+        } else {
+            button.setText("$");
+        }
+
+        button.setMargin(new Insets(0, 3, 0, 3));
+        button.setPreferredSize(new Dimension(42, 18));
+        button.setMaximumSize(new Dimension(42, 18));
+        button.setToolTipText("Store payment");
+        button.addActionListener(e -> {
+            sessionManager.requestPaymentCalculation(session.getUsername());
+            update();
         });
-        return deleteBtn;
+
+        return button;
+    }
+
+    private JButton createEndDepositingTripButton(PlayerSession session) {
+        JButton button = createCompactButton("End", "End this depositing player's trip and ignore them");
+        button.addActionListener(e -> {
+            sessionManager.endDepositingPlayerTrip(session.getUsername());
+            update();
+        });
+        return button;
+    }
+
+    private ImageIcon loadIcon(String path, int width, int height) {
+        try {
+            java.io.InputStream inputStream = getClass().getResourceAsStream(path);
+            if (inputStream == null) {
+                log.debug("Skipper's Ledger icon resource not found: {}", path);
+                return null;
+            }
+
+            BufferedImage image = ImageIO.read(inputStream);
+            if (image == null) {
+                log.debug("Skipper's Ledger icon is not a readable image: {}", path);
+                return null;
+            }
+
+            Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+            return new ImageIcon(scaled);
+        } catch (IOException | IllegalArgumentException e) {
+            log.warn("Skipper's Ledger unable to load icon {}", path, e);
+            return null;
+        }
     }
 
     private JButton createCompactButton(String text, String tooltip) {
@@ -489,12 +655,8 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private void updateTotalOwed() {
-        long totalGp = sessionManager.getSessions().values().stream()
-                .filter(session -> !session.isDepositing())
-                .mapToLong(session -> {
-                    long currentOwed = session.isPaid() ? 0 : calculateOwed(session);
-                    return session.getTotalPaidGp() + currentOwed;
-                })
+        long totalGp = sessionManager.getPaymentOwed().values().stream()
+                .mapToLong(LedgerSessionManager.PaymentOwed::getGp)
                 .sum();
 
         totalOwedLabel.setText("Total GP: " + formatMoneyK(totalGp));
@@ -539,31 +701,49 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private void copyToClipboard() {
-        StringBuilder sb = new StringBuilder("Skipper's Ledger - Trip Summary**\n\n");
+        StringBuilder sb = new StringBuilder();
 
-        sessionManager.getSessions().values().stream()
-                .filter(PlayerSession::isDone)
-                .filter(s -> !s.isDepositing())
-                .sorted(Comparator.comparing(PlayerSession::getUsername))
-                .forEach(s -> {
-                    long owed = calculateOwed(s);
-                    String paidStatus = s.isPaid() ? "Paid" : "Unpaid";
+        long totalGp = sessionManager.getPaymentOwed().values().stream()
+                .mapToLong(LedgerSessionManager.PaymentOwed::getGp)
+                .sum();
 
-                    sb.append(String.format("%-12s | %s | %s | %s\n",
-                            s.getUsername(),
-                            formatTime(s.getDisplayedSeconds()),
-                            formatMoneyK(owed),
-                            paidStatus));
-                });
+        sb.append("**Skipper's Ledger - Payment Summary**\n");
 
-        boolean hasEndedBankingPlayers = sessionManager.getSessions().values().stream()
-                .anyMatch(s -> s.isDone() && !s.isDepositing());
+        if (sessionManager.getPaymentOwed().isEmpty()) {
+            sb.append("_No payments owed._");
+        } else {
+            sessionManager.getPaymentOwed().values().stream()
+                    .sorted(Comparator.comparing(LedgerSessionManager.PaymentOwed::getUsername))
+                    .forEach(payment -> {
+                        String paidStatus = payment.isPaid() ? "✅ Paid" : "❌ Unpaid";
 
-        if (!hasEndedBankingPlayers) {
-            sb.append("No banking players recorded.");
+                        sb.append("• **")
+                                .append(escapeDiscordMarkdown(payment.getUsername()))
+                                .append("** — ")
+                                .append(formatTime(payment.getSeconds()))
+                                .append(" — ")
+                                .append(formatMoneyK(payment.getGp()))
+                                .append(" — ")
+                                .append(paidStatus)
+                                .append("\n");
+                    });
         }
 
         Toolkit.getDefaultToolkit().getSystemClipboard()
                 .setContents(new StringSelection(sb.toString()), null);
+    }
+
+    private String escapeDiscordMarkdown(String text) {
+        if (text == null) {
+            return "";
+        }
+
+        return text
+                .replace("\\", "\\\\")
+                .replace("*", "\\*")
+                .replace("_", "\\_")
+                .replace("~", "\\~")
+                .replace("`", "\\`")
+                .replace("|", "\\|");
     }
 }

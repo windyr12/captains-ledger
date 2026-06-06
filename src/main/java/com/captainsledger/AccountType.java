@@ -6,9 +6,7 @@ public enum AccountType
     REGULAR(null),
     IRONMAN("/icons/ironman.png"),
     HARDCORE_IRONMAN("/icons/hardcore_ironman.png"),
-    ULTIMATE_IRONMAN("/icons/ultimate_ironman.png"),
-    GROUP_IRONMAN("/icons/group_ironman.png"),
-    HARDCORE_GROUP_IRONMAN("/icons/hardcore_group_ironman.png");
+    ULTIMATE_IRONMAN("/icons/ultimate_ironman.png"),;
 
     private final String iconPath;
 
@@ -26,8 +24,6 @@ public enum AccountType
     {
         return this == IRONMAN
                 || this == HARDCORE_IRONMAN
-                || this == ULTIMATE_IRONMAN
-                || this == GROUP_IRONMAN
-                || this == HARDCORE_GROUP_IRONMAN;
+                || this == ULTIMATE_IRONMAN;
     }
 }

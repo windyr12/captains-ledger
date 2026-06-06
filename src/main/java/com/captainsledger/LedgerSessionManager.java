@@ -1,6 +1,7 @@
 package com.captainsledger;
 
 import lombok.Getter;
+import lombok.Setter;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.WorldView;
@@ -8,8 +9,8 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.hiscore.HiscoreClient;
 import net.runelite.client.hiscore.HiscoreEndpoint;
 import net.runelite.client.hiscore.HiscoreResult;
+import net.runelite.client.util.Text;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -21,8 +22,7 @@ import java.util.concurrent.Executors;
 
 public class LedgerSessionManager
 {
-    private static final Duration AWAY_GRACE_PERIOD = Duration.ofMinutes(5);
-    private static final Duration RETURN_CONFIRMATION_PERIOD = Duration.ofMinutes(2);
+    private static final int MAX_ACTIVE_CREW = 9;
 
     private final Client client;
     private final HiscoreClient hiscoreClient;
@@ -33,11 +33,13 @@ public class LedgerSessionManager
 
     @Getter
     private final Map<String, PlayerSession> sessions = new HashMap<>();
-    private final Set<String> currentlySeenPlayers = new HashSet<>();
+    @Getter
+    private final Map<String, PaymentOwed> paymentOwed = new HashMap<>();
+    @Getter
     private final Set<String> ignoredPlayers = new HashSet<>();
-    private final Set<String> waitingForStepAwayPlayers = new HashSet<>();
+    private final Set<String> currentlySeenPlayers = new HashSet<>();
+    private final Set<String> testPlayers = new HashSet<>();
     private final Map<String, Player> knownPlayers = new HashMap<>();
-    boolean forceResumeEndedPlayers = false;
 
     @Getter
     private boolean tripActive = false;
@@ -65,6 +67,23 @@ public class LedgerSessionManager
         return !sessions.isEmpty();
     }
 
+    public int getMaxActiveCrew()
+    {
+        return MAX_ACTIVE_CREW;
+    }
+
+    public int getActiveCrewCount()
+    {
+        return (int) sessions.values().stream()
+                .filter(session -> !session.isWaitingForCrewSlot())
+                .count();
+    }
+
+    public boolean hasIgnoredPlayers()
+    {
+        return !ignoredPlayers.isEmpty();
+    }
+
     public void startOrResumeTrip()
     {
         if (sessions.isEmpty())
@@ -81,8 +100,6 @@ public class LedgerSessionManager
     {
         tripActive = true;
         currentlySeenPlayers.clear();
-        ignoredPlayers.clear();
-        waitingForStepAwayPlayers.clear();
 
         scanKnownPlayers();
     }
@@ -91,70 +108,51 @@ public class LedgerSessionManager
     {
         tripActive = true;
         currentlySeenPlayers.clear();
-        ignoredPlayers.clear();
-        waitingForStepAwayPlayers.clear();
 
         Instant now = Instant.now();
 
         sessions.values().forEach(session -> {
-            if (!session.isDone())
-            {
-                return;
-            }
-
-            long resumeSeconds = session.getDisplayedSeconds();
-
-            if (session.isPaid())
-            {
-                session.setAccumulatedSeconds(0);
-                session.setCurrentPaidGp(0);
-                session.setPaid(false);
-            }
-            else
-            {
-                session.setAccumulatedSeconds(resumeSeconds);
-            }
-
             session.setDone(false);
             session.setIsOnBoat(true);
             session.setJoinTime(now);
             session.setGracePeriodEnd(null);
             session.setLeftBoatTime(null);
             session.setStoredSeconds(0);
+            session.setReturnConfirmationStartTime(null);
+            session.setAwaitingPaymentConfirmation(false);
 
             currentlySeenPlayers.add(session.getUsername());
         });
+
+        scanKnownPlayers();
     }
 
     public void endTrip()
     {
         sessions.values().forEach(session -> {
-            long finalSeconds = session.getTotalSeconds();
-
-            session.setAccumulatedSeconds(finalSeconds);
+            session.setAccumulatedSeconds(session.getDisplayedSeconds());
             session.setStoredSeconds(0);
             session.setJoinTime(null);
             session.setIsOnBoat(false);
             session.setGracePeriodEnd(null);
             session.setLeftBoatTime(null);
             session.setReturnConfirmationStartTime(null);
-            session.setDone(true);
+            session.setAwaitingPaymentConfirmation(false);
         });
 
         tripActive = false;
         currentlySeenPlayers.clear();
-
     }
 
     public void resetAll()
     {
         sessions.clear();
+        paymentOwed.clear();
         currentlySeenPlayers.clear();
         ignoredPlayers.clear();
-        waitingForStepAwayPlayers.clear();
+        testPlayers.clear();
         tripActive = false;
     }
-
 
     public void onPlayerSpawned(Player player)
     {
@@ -187,6 +185,8 @@ public class LedgerSessionManager
         }
     }
 
+
+
     public void onGameTick()
     {
         if (!tripActive)
@@ -200,11 +200,7 @@ public class LedgerSessionManager
         if (local != null && isPlayerOnSameTile(local))
         {
             playersCurrentlyOnTile.add(local.getName());
-
-            if (!waitingForStepAwayPlayers.contains(local.getName()) || forceResumeEndedPlayers)
-            {
-                addPlayerIfOnSameTile(local);
-            }
+            addPlayerIfOnSameTile(local);
         }
 
         for (Player player : knownPlayers.values())
@@ -212,11 +208,7 @@ public class LedgerSessionManager
             if (isPlayerOnSameTile(player))
             {
                 playersCurrentlyOnTile.add(player.getName());
-
-                if (!waitingForStepAwayPlayers.contains(player.getName()) || forceResumeEndedPlayers)
-                {
-                    addPlayerIfOnSameTile(player);
-                }
+                addPlayerIfOnSameTile(player);
             }
         }
 
@@ -228,16 +220,10 @@ public class LedgerSessionManager
                 if (isPlayerOnSameTile(player))
                 {
                     playersCurrentlyOnTile.add(player.getName());
-
-                    if (!waitingForStepAwayPlayers.contains(player.getName()) || forceResumeEndedPlayers)
-                    {
-                        addPlayerIfOnSameTile(player);
-                    }
+                    addPlayerIfOnSameTile(player);
                 }
             }
         }
-
-        waitingForStepAwayPlayers.removeIf(name -> !playersCurrentlyOnTile.contains(name));
 
         for (String name : new HashSet<>(currentlySeenPlayers))
         {
@@ -247,53 +233,7 @@ public class LedgerSessionManager
             }
         }
 
-        updateSessionStates();
-
-        forceResumeEndedPlayers = false;
-    }
-
-    private void updateSessionStates()
-    {
-        Instant now = Instant.now();
-
-        sessions.values().forEach(session -> {
-            if (!session.isOnBoat()
-                    && !session.isDone()
-                    && session.getGracePeriodEnd() != null
-                    && now.isAfter(session.getGracePeriodEnd()))
-            {
-                session.setAccumulatedSeconds(session.getTotalSeconds());
-                session.setDone(true);
-                session.setGracePeriodEnd(null);
-                session.setLeftBoatTime(null);
-                session.setJoinTime(null);
-                session.setReturnConfirmationStartTime(null);
-            }
-
-            if (session.isDone()
-                    && session.isOnBoat()
-                    && session.getReturnConfirmationStartTime() != null
-                    && Duration.between(session.getReturnConfirmationStartTime(), now).compareTo(RETURN_CONFIRMATION_PERIOD) >= 0)
-            {
-                if (session.isPaid())
-                {
-                    session.setAccumulatedSeconds(0);
-                    session.setCurrentPaidGp(0);
-                    session.setPaid(false);
-                }
-                else
-                {
-                    session.setAccumulatedSeconds(session.getDisplayedSeconds());
-                }
-
-                session.setDone(false);
-                session.setGracePeriodEnd(null);
-                session.setLeftBoatTime(null);
-                session.setReturnConfirmationStartTime(null);
-                session.setJoinTime(Instant.now());
-                session.setIsOnBoat(true);
-            }
-        });
+        promoteWaitingPlayers();
     }
 
     private void scanKnownPlayers()
@@ -311,20 +251,6 @@ public class LedgerSessionManager
                 addPlayerIfOnSameTile(player);
             }
         }
-    }
-
-    private void resumeDetectedEndedPlayersNow()
-    {
-        Instant now = Instant.now();
-
-        sessions.values().forEach(session -> {
-            if (!session.isDone() || !session.isOnBoat())
-            {
-                return;
-            }
-
-            resumeSessionImmediately(session, now);
-        });
     }
 
     private boolean isPlayerOnSameTile(Player player)
@@ -371,6 +297,19 @@ public class LedgerSessionManager
 
     private void markPlayerOffBoat(String name)
     {
+        if (testPlayers.contains(name))
+        {
+            currentlySeenPlayers.add(name);
+
+            PlayerSession testSession = sessions.get(name);
+            if (testSession != null)
+            {
+                testSession.setIsOnBoat(true);
+            }
+
+            return;
+        }
+
         currentlySeenPlayers.remove(name);
 
         PlayerSession session = sessions.get(name);
@@ -379,21 +318,13 @@ public class LedgerSessionManager
             return;
         }
 
-        if (session.isDone())
-        {
-            session.setJoinTime(null);
-            session.setIsOnBoat(false);
-            session.setLeftBoatTime(null);
-            session.setGracePeriodEnd(null);
-            return;
-        }
+        long timeAtDetectionLoss = session.getTotalSeconds();
 
-        session.setAccumulatedSeconds(session.getTotalSeconds());
-        session.setJoinTime(null);
+        session.setStoredSeconds(timeAtDetectionLoss);
         session.setIsOnBoat(false);
         session.setDone(false);
-        session.setLeftBoatTime(Instant.now());
-        session.setGracePeriodEnd(Instant.now().plus(AWAY_GRACE_PERIOD));
+        session.setLeftBoatTime(null);
+        session.setGracePeriodEnd(null);
     }
 
     private void addPlayerIfOnSameTile(Player player)
@@ -404,48 +335,71 @@ public class LedgerSessionManager
         }
 
         String name = player.getName();
+
+        if (!sessions.containsKey(name) && isNewPlayerDetectionDisabled())
+        {
+            return;
+        }
+
         currentlySeenPlayers.add(name);
 
-        PlayerSession session = sessions.computeIfAbsent(name,
-                n -> new PlayerSession(n, true));
+        PlayerSession session = sessions.computeIfAbsent(name, n -> {
+            PlayerSession newSession = new PlayerSession(n, true);
+            newSession.setWaitingForCrewSlot(getActiveCrewCount() >= MAX_ACTIVE_CREW);
+            return newSession;
+        });
 
         queueAccountTypeLookup(session);
 
-        if (session.isDone())
-        {
-            if (session.getReturnConfirmationStartTime() == null)
-            {
-                session.setReturnConfirmationStartTime(Instant.now());
-            }
-
-            session.setIsOnBoat(true);
-
-            if (forceResumeEndedPlayers)
-            {
-                resumeSessionImmediately(session, Instant.now());
-            }
-
-            return;
-        }
-
         if (!session.isOnBoat())
         {
-            if (!session.isDone()
-                    && session.getLeftBoatTime() != null
-                    && session.getGracePeriodEnd() != null
-                    && Instant.now().isBefore(session.getGracePeriodEnd()))
-            {
-                session.setAccumulatedSeconds(session.getTotalSeconds());
-            }
-
-            session.setGracePeriodEnd(null);
-            session.setLeftBoatTime(null);
-            session.setJoinTime(Instant.now());
             session.setIsOnBoat(true);
+            session.setLeftBoatTime(null);
+            session.setGracePeriodEnd(null);
+        }
+
+        promoteWaitingPlayers();
+    }
+
+    private boolean isNewPlayerDetectionDisabled()
+    {
+        return !sessions.isEmpty() && currentlySeenPlayers.isEmpty();
+    }
+
+    private void promoteWaitingPlayers()
+    {
+        int activeCrewCount = getActiveCrewCount();
+
+        if (activeCrewCount >= MAX_ACTIVE_CREW)
+        {
             return;
         }
 
-        session.setIsOnBoat(true);
+        sessions.values().stream()
+                .filter(PlayerSession::isWaitingForCrewSlot)
+                .sorted((a, b) -> {
+                    Instant aJoin = a.getJoinTime();
+                    Instant bJoin = b.getJoinTime();
+
+                    if (aJoin == null && bJoin == null)
+                    {
+                        return a.getUsername().compareToIgnoreCase(b.getUsername());
+                    }
+
+                    if (aJoin == null)
+                    {
+                        return 1;
+                    }
+
+                    if (bJoin == null)
+                    {
+                        return -1;
+                    }
+
+                    return aJoin.compareTo(bJoin);
+                })
+                .limit(MAX_ACTIVE_CREW - activeCrewCount)
+                .forEach(session -> session.setWaitingForCrewSlot(false));
     }
 
     private void queueAccountTypeLookup(PlayerSession session)
@@ -553,44 +507,6 @@ public class LedgerSessionManager
                 .toLowerCase(Locale.ROOT);
     }
 
-    private void resumeSessionImmediately(PlayerSession session, Instant now)
-    {
-        if (session.isPaid())
-        {
-            session.setAccumulatedSeconds(0);
-            session.setCurrentPaidGp(0);
-            session.setPaid(false);
-        }
-        else
-        {
-            session.setAccumulatedSeconds(session.getDisplayedSeconds());
-        }
-
-        session.setDone(false);
-        session.setGracePeriodEnd(null);
-        session.setLeftBoatTime(null);
-        session.setReturnConfirmationStartTime(null);
-        session.setJoinTime(now);
-        session.setIsOnBoat(true);
-
-        currentlySeenPlayers.add(session.getUsername());
-        waitingForStepAwayPlayers.remove(session.getUsername());
-    }
-
-    private void resumeAllEndedPlayersImmediately()
-    {
-        Instant now = Instant.now();
-
-        sessions.values().forEach(session -> {
-            if (!session.isDone())
-            {
-                return;
-            }
-
-            resumeSessionImmediately(session, now);
-        });
-    }
-
     public void setHourlyRate(int rate)
     {
         this.hourlyRate = Math.max(0, rate);
@@ -600,10 +516,64 @@ public class LedgerSessionManager
     {
         sessions.remove(username);
         currentlySeenPlayers.remove(username);
+        testPlayers.remove(username);
         ignoredPlayers.add(username);
+        promoteWaitingPlayers();
     }
 
-    public void endPlayerTrip(String username)
+    public void stopIgnoringPlayer(String username)
+    {
+        ignoredPlayers.remove(username);
+    }
+
+    public void addTestPlayers()
+    {
+        tripActive = true;
+
+        for (int i = 1; i <= MAX_ACTIVE_CREW; i++)
+        {
+            String username = "player" + i;
+
+            ignoredPlayers.remove(username);
+            testPlayers.add(username);
+            currentlySeenPlayers.add(username);
+
+            PlayerSession session = sessions.computeIfAbsent(username, name -> new PlayerSession(name, false));
+            session.setIsOnBoat(true);
+            session.setWaitingForCrewSlot(false);
+            session.setDone(false);
+            session.setAwaitingPaymentConfirmation(false);
+
+            if (session.getJoinTime() == null)
+            {
+                session.setJoinTime(Instant.now());
+            }
+        }
+
+        promoteWaitingPlayers();
+    }
+
+    public void requestPaymentCalculation(String username)
+    {
+        PlayerSession session = sessions.get(username);
+        if (session == null || session.isDepositing())
+        {
+            return;
+        }
+
+        long totalSecondsForPayment = !session.isOnBoat() && session.getStoredSeconds() > 0
+                ? session.getStoredSeconds()
+                : session.getTotalSeconds();
+
+        long payableSeconds = Math.max(0, totalSecondsForPayment - session.getPaymentBaselineSeconds());
+
+        session.setPendingPaymentSeconds(payableSeconds);
+        session.setAccumulatedSeconds(totalSecondsForPayment);
+        session.setJoinTime(null);
+        session.setAwaitingPaymentConfirmation(true);
+    }
+
+    public void endDepositingPlayerTrip(String username)
     {
         PlayerSession session = sessions.get(username);
         if (session == null)
@@ -611,49 +581,130 @@ public class LedgerSessionManager
             return;
         }
 
-        long finalSeconds = session.isOnBoat()
-                ? session.getTotalSeconds()
-                : session.getAccumulatedSeconds();
-
-        session.setAccumulatedSeconds(finalSeconds);
-        session.setStoredSeconds(0);
+        session.setAccumulatedSeconds(session.getTotalSeconds());
+        session.setStoredSeconds(session.getAccumulatedSeconds());
         session.setJoinTime(null);
         session.setIsOnBoat(false);
+        session.setAwaitingPaymentConfirmation(false);
+
+        sessions.remove(username);
+        currentlySeenPlayers.remove(username);
+        testPlayers.remove(username);
+        ignoredPlayers.add(username);
+        promoteWaitingPlayers();
+    }
+
+    public void confirmPaymentAndContinue(String username)
+    {
+        PlayerSession session = sessions.get(username);
+        if (session == null)
+        {
+            return;
+        }
+
+        addPaymentOwed(session);
+        resetSessionForContinuation(session);
+    }
+
+    public void confirmPaymentAndRemove(String username)
+    {
+        PlayerSession session = sessions.get(username);
+        if (session == null)
+        {
+            return;
+        }
+
+        addPaymentOwed(session);
+        session.setPendingPaymentSeconds(0);
+        sessions.remove(username);
+        currentlySeenPlayers.remove(username);
+        testPlayers.remove(username);
+        ignoredPlayers.add(username);
+        promoteWaitingPlayers();
+    }
+
+    public void cancelPaymentCalculation(String username)
+    {
+        PlayerSession session = sessions.get(username);
+        if (session == null)
+        {
+            return;
+        }
+
+        session.setPendingPaymentSeconds(0);
+        session.setAwaitingPaymentConfirmation(false);
+        session.setJoinTime(Instant.now());
+    }
+
+    private void addPaymentOwed(PlayerSession session)
+    {
+        if (session == null || session.isDepositing())
+        {
+            return;
+        }
+
+        long seconds = session.getPendingPaymentSeconds();
+        long gp = calculateOwed(seconds);
+
+        paymentOwed.compute(session.getUsername(), (name, existing) -> {
+            if (existing == null)
+            {
+                return new PaymentOwed(name, seconds, gp, session.getAccountType());
+            }
+
+            existing.add(seconds, gp);
+            existing.setAccountType(session.getAccountType());
+            return existing;
+        });
+    }
+
+    private void resetSessionForContinuation(PlayerSession session)
+    {
+        long totalSeconds = session.getAccumulatedSeconds();
+
+        session.setPaymentBaselineSeconds(totalSeconds);
+        session.setPendingPaymentSeconds(0);
+        session.setJoinTime(Instant.now());
+        session.setIsOnBoat(true);
+        session.setDone(false);
+        session.setPaid(false);
+        session.setCurrentPaidGp(0);
         session.setGracePeriodEnd(null);
         session.setLeftBoatTime(null);
         session.setReturnConfirmationStartTime(null);
-        session.setDone(true);
+        session.setAwaitingPaymentConfirmation(false);
 
-        currentlySeenPlayers.remove(username);
-        waitingForStepAwayPlayers.add(username);
+        currentlySeenPlayers.add(session.getUsername());
     }
 
     public void setPaid(String username, boolean paid)
     {
-        PlayerSession session = sessions.get(username);
-        if (session == null)
+        PaymentOwed owed = paymentOwed.get(username);
+        if (owed != null)
         {
-            return;
+            owed.setPaid(paid);
+        }
+    }
+
+    public long calculateCurrentOwed(PlayerSession session)
+    {
+        if (session == null || session.isDepositing())
+        {
+            return 0;
         }
 
-        if (paid && !session.isPaid())
-        {
-            long paidGp = calculateOwed(session);
-            session.setCurrentPaidGp(paidGp);
-            session.setTotalPaidGp(session.getTotalPaidGp() + paidGp);
-            session.setPaid(true);
-        }
-        else if (!paid && session.isPaid())
-        {
-            session.setTotalPaidGp(Math.max(0, session.getTotalPaidGp() - session.getCurrentPaidGp()));
-            session.setCurrentPaidGp(0);
-            session.setPaid(false);
-        }
+        long payableSeconds = Math.max(0, session.getDisplayedSeconds() - session.getPaymentBaselineSeconds());
+        return calculateOwed(payableSeconds);
     }
 
     private long calculateOwed(PlayerSession session)
     {
-        double hours = session.getDisplayedSeconds() / 3600.0;
+        return calculateOwed(session.getDisplayedSeconds());
+    }
+
+    private long calculateOwed(long seconds)
+    {
+        double hours = seconds / 3600.0;
         long rawOwed = Math.round(hours * hourlyRate);
         return Math.round(rawOwed / 1000.0) * 1000;
     }
@@ -667,4 +718,40 @@ public class LedgerSessionManager
         }
     }
 
+    public static class PaymentOwed
+    {
+        @Getter
+        private final String username;
+        @Getter
+        private long seconds;
+        @Getter
+        private long gp;
+        @Getter
+        @Setter
+        private boolean paid;
+        @Getter
+        @Setter
+        private AccountType accountType;
+
+        public PaymentOwed(String username, long seconds, long gp, AccountType accountType)
+        {
+            this.username = username;
+            this.seconds = seconds;
+            this.gp = gp;
+            this.accountType = accountType;
+        }
+
+        public void add(long seconds, long gp)
+        {
+            if (paid)
+            {
+                this.seconds = 0;
+                this.gp = 0;
+            }
+
+            this.seconds += seconds;
+            this.gp += gp;
+            this.paid = false;
+        }
+    }
 }
