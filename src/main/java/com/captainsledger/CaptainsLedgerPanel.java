@@ -42,7 +42,7 @@ public class CaptainsLedgerPanel extends PluginPanel {
     private final JPanel ignoredSection = new JPanel(new BorderLayout());
     private final JTextField hourlyRateField = new JTextField(8);
     private final JButton startButton = new JButton("Start Trip");
-    private final JButton endButton = new JButton("End Trip");
+    private final JButton endButton = new JButton("Stop Trip");
     private final JLabel totalOwedLabel = new JLabel("Total GP: 0k");
     private final TitledBorder activeCrewBorder = BorderFactory.createTitledBorder("Active Crew (0/9)");
 
@@ -163,6 +163,8 @@ public class CaptainsLedgerPanel extends PluginPanel {
         listsPanel.add(activeSection);
         listsPanel.add(Box.createVerticalStrut(8));
         listsPanel.add(endedSection);
+        listsPanel.add(Box.createVerticalStrut(8));
+        listsPanel.add(ignoredSection);
 
         JScrollPane scrollPane = new JScrollPane(listsPanel);
         scrollPane.setBorder(null);
@@ -209,15 +211,6 @@ public class CaptainsLedgerPanel extends PluginPanel {
         sessionManager.getIgnoredPlayers().stream()
                 .sorted(String::compareToIgnoreCase)
                 .forEach(username -> ignoredPlayersPanel.add(createIgnoredPlayerRow(username)));
-
-        Container parent = ignoredSection.getParent();
-        if (sessionManager.hasIgnoredPlayers() && parent == null) {
-            JPanel listsPanel = (JPanel) ((JScrollPane) getComponent(1)).getViewport().getView();
-            listsPanel.add(Box.createVerticalStrut(8));
-            listsPanel.add(ignoredSection);
-        } else if (!sessionManager.hasIgnoredPlayers() && parent != null) {
-            parent.remove(ignoredSection);
-        }
 
         boolean active = sessionManager.isTripActive();
         boolean hasExistingSessions = sessionManager.hasSessions();
@@ -665,7 +658,7 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private JButton createEndDepositingTripButton(PlayerSession session) {
-        JButton button = createCompactButton("End", "End this depositing player's trip and ignore them");
+        JButton button = createCompactButton("End", "Remove from active crew?");
         button.addActionListener(e -> {
             sessionManager.endDepositingPlayerTrip(session.getUsername());
             update();
@@ -683,11 +676,15 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private void updateTotalOwed() {
-        long totalGp = sessionManager.getPaymentOwed().values().stream()
+        long storedGp = sessionManager.getPaymentOwed().values().stream()
                 .mapToLong(LedgerSessionManager.PaymentOwed::getGp)
                 .sum();
 
-        totalOwedLabel.setText("Total GP: " + formatMoneyK(totalGp));
+        long activeGp = sessionManager.getSessions().values().stream()
+                .mapToLong(sessionManager::calculateCurrentOwed)
+                .sum();
+
+        totalOwedLabel.setText("Total GP: " + formatMoneyK(storedGp + activeGp));
     }
 
     private long calculateOwed(PlayerSession session) {
