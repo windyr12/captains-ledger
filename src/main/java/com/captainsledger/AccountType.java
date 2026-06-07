@@ -5,17 +5,22 @@ import lombok.Getter;
 @Getter
 public enum AccountType
 {
-    UNKNOWN(null),
-    REGULAR(null),
-    IRONMAN("/icons/ironman.png"),
-    HARDCORE_IRONMAN("/icons/hardcore_ironman.png"),
-    ULTIMATE_IRONMAN("/icons/ultimate_ironman.png"),;
+    UNKNOWN(-1),
+    REGULAR(-1),
+    IRONMAN(2),
+    HARDCORE_IRONMAN(10),
+    ULTIMATE_IRONMAN(3);
 
-    private final String iconPath;
+    private final int modIcon;
 
-    AccountType(String iconPath)
+    AccountType(int modIcon)
     {
-        this.iconPath = iconPath;
+        this.modIcon = modIcon;
+    }
+
+    public boolean hasModIcon()
+    {
+        return modIcon >= 0;
     }
 
     public boolean isIronman()
@@ -25,5 +30,3 @@ public enum AccountType
                 || this == ULTIMATE_IRONMAN;
     }
 }
-
-//

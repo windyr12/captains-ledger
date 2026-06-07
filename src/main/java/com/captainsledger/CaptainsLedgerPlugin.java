@@ -7,18 +7,19 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.PlayerSpawned;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.hiscore.HiscoreClient;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SpriteManager;
+import net.runelite.client.hiscore.HiscoreClient;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 
+import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
-
 import java.io.IOException;
 
 /*
@@ -39,6 +40,8 @@ public class CaptainsLedgerPlugin extends Plugin
 	@Inject private CaptainsLedgerConfig config;
 	@Inject private net.runelite.api.Client client;
 	@Inject private HiscoreClient hiscoreClient;
+	@Inject private SpriteManager spriteManager;
+	@Inject private ItemManager itemManager;
 
 	@Getter
 	private LedgerSessionManager sessionManager;
@@ -51,7 +54,7 @@ public class CaptainsLedgerPlugin extends Plugin
 		log.debug("Skipper's Ledger starting");
 
 		sessionManager = new LedgerSessionManager(client, hiscoreClient);
-		panel = new CaptainsLedgerPanel(this, sessionManager, config);
+		panel = new CaptainsLedgerPanel(this, sessionManager, config, client, spriteManager, itemManager);
 		sessionManager.setPanelUpdateCallback(() -> SwingUtilities.invokeLater(panel::update));
 
 		navButton = NavigationButton.builder()

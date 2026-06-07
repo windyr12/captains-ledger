@@ -1,18 +1,21 @@
 package com.captainsledger;
 
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.IndexedSprite;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.Text;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.Map;
@@ -28,6 +31,9 @@ public class CaptainsLedgerPanel extends PluginPanel {
     private static final int ROW_HEIGHT_ENDED = 50;
 
     private final LedgerSessionManager sessionManager;
+    private final Client client;
+    private final SpriteManager spriteManager;
+    private final ItemManager itemManager;
     private final Map<AccountType, ImageIcon> accountIcons = new EnumMap<>(AccountType.class);
 
     private final JPanel playersPanel = new JPanel();
@@ -39,14 +45,24 @@ public class CaptainsLedgerPanel extends PluginPanel {
     private final JButton endButton = new JButton("End Trip");
     private final JLabel totalOwedLabel = new JLabel("Total GP: 0k");
     private final TitledBorder activeCrewBorder = BorderFactory.createTitledBorder("Active Crew (0/9)");
-    private final ImageIcon coinsIcon;
 
-    public CaptainsLedgerPanel(CaptainsLedgerPlugin plugin, LedgerSessionManager sessionManager, CaptainsLedgerConfig config) {
+
+    public CaptainsLedgerPanel(
+            CaptainsLedgerPlugin plugin,
+            LedgerSessionManager sessionManager,
+            CaptainsLedgerConfig config,
+            Client client,
+            SpriteManager spriteManager,
+            ItemManager itemManager
+    ) {
         final JButton resetButton = new JButton("Reset All");
         final JButton addTestPlayersButton = new JButton("Add Test Crew");
         this.sessionManager = sessionManager;
+        this.client = client;
+        this.spriteManager = spriteManager;
+        this.itemManager = itemManager;
         loadAccountIcons();
-        coinsIcon = loadIcon("/icons/coins.png", 16, 16);
+
 
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -520,38 +536,53 @@ public class CaptainsLedgerPanel extends PluginPanel {
     }
 
     private void loadAccountIcons() {
-        for (AccountType accountType : AccountType.values()) {
-            String iconPath = accountType.getIconPath();
+        IndexedSprite[] modIcons = client.getModIcons();
 
-            if (iconPath == null) {
+        if (modIcons == null) {
+            log.debug("Skipper's Ledger mod icons are not available yet");
+            return;
+        }
+
+        for (AccountType accountType : AccountType.values()) {
+            if (!accountType.hasModIcon()) {
                 continue;
             }
 
-            try {
-                java.io.InputStream inputStream = getClass().getResourceAsStream(iconPath);
-                if (inputStream == null) {
-                    log.debug("Skipper's Ledger account icon resource not found: {}", iconPath);
-                    continue;
+            int modIcon = accountType.getModIcon();
+
+            if (modIcon < 0 || modIcon >= modIcons.length || modIcons[modIcon] == null) {
+                log.debug("Skipper's Ledger account mod icon not found: {} ({})", accountType, modIcon);
+                continue;
+            }
+
+            accountIcons.put(accountType, scaleIcon(toBufferedImage(modIcons[modIcon]), ACCOUNT_ICON_SIZE, ACCOUNT_ICON_SIZE));
+            log.debug("Skipper's Ledger loaded account mod icon {}", accountType);
+        }
+    }
+
+    private BufferedImage toBufferedImage(IndexedSprite sprite) {
+        BufferedImage image = new BufferedImage(sprite.getWidth(), sprite.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        byte[] pixels = sprite.getPixels();
+        int[] palette = sprite.getPalette();
+
+        for (int y = 0; y < sprite.getHeight(); y++) {
+            for (int x = 0; x < sprite.getWidth(); x++) {
+                int index = pixels[y * sprite.getWidth() + x] & 0xFF;
+
+                if (index == 0) {
+                    image.setRGB(x, y, 0x00000000);
+                } else {
+                    image.setRGB(x, y, 0xFF000000 | palette[index]);
                 }
-
-                BufferedImage image = ImageIO.read(inputStream);
-                if (image == null) {
-                    log.debug("Skipper's Ledger account icon is not a readable image: {}", iconPath);
-                    continue;
-                }
-
-                Image scaled = image.getScaledInstance(
-                        ACCOUNT_ICON_SIZE,
-                        ACCOUNT_ICON_SIZE,
-                        Image.SCALE_SMOOTH
-                );
-
-                accountIcons.put(accountType, new ImageIcon(scaled));
-                log.debug("Skipper's Ledger loaded account icon {} from {}", accountType, iconPath);
-            } catch (IOException | IllegalArgumentException e) {
-                log.warn("Skipper's Ledger unable to load account icon {}", iconPath, e);
             }
         }
+
+        return image;
+    }
+
+    private ImageIcon scaleIcon(BufferedImage image, int width, int height) {
+        Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
     }
 
     private JLabel createAccountIconLabel(PlayerSession session) {
@@ -596,15 +627,24 @@ public class CaptainsLedgerPanel extends PluginPanel {
     private JButton createCalculatePaymentButton(PlayerSession session) {
         JButton button = new JButton();
 
-        if (coinsIcon != null) {
-            button.setIcon(coinsIcon);
-        } else {
-            button.setText("$");
-        }
+        AsyncBufferedImage coinsImage = itemManager.getImage(995, 100, true);
+        button.setIcon(createCroppedCoinIcon(coinsImage, 14, 14));
+        coinsImage.onLoaded(() -> SwingUtilities.invokeLater(() -> {
+            button.setIcon(createCroppedCoinIcon(coinsImage, 14, 14));
+            button.revalidate();
+            button.repaint();
+        }));
 
-        button.setMargin(new Insets(0, 3, 0, 3));
-        button.setPreferredSize(new Dimension(42, 18));
-        button.setMaximumSize(new Dimension(42, 18));
+        button.setText(null);
+        button.setHorizontalAlignment(SwingConstants.CENTER);
+        button.setVerticalAlignment(SwingConstants.CENTER);
+        button.setHorizontalTextPosition(SwingConstants.CENTER);
+        button.setVerticalTextPosition(SwingConstants.CENTER);
+        button.setIconTextGap(0);
+
+        button.setMargin(new Insets(0, 0, 0, 0));
+        button.setPreferredSize(new Dimension(42, 22));
+        button.setMaximumSize(new Dimension(42, 22));
         button.setToolTipText("Store payment");
         button.addActionListener(e -> {
             sessionManager.requestPaymentCalculation(session.getUsername());
@@ -614,6 +654,16 @@ public class CaptainsLedgerPanel extends PluginPanel {
         return button;
     }
 
+    private ImageIcon createCroppedCoinIcon(BufferedImage image, int width, int height) {
+        int cropX = 0;
+        int cropY = 10;
+        int cropWidth = image.getWidth();
+        int cropHeight = image.getHeight() - cropY;
+
+        BufferedImage cropped = image.getSubimage(cropX, cropY, cropWidth, cropHeight);
+        return scaleIcon(cropped, width, height);
+    }
+
     private JButton createEndDepositingTripButton(PlayerSession session) {
         JButton button = createCompactButton("End", "End this depositing player's trip and ignore them");
         button.addActionListener(e -> {
@@ -621,28 +671,6 @@ public class CaptainsLedgerPanel extends PluginPanel {
             update();
         });
         return button;
-    }
-
-    private ImageIcon loadIcon(String path, int width, int height) {
-        try {
-            java.io.InputStream inputStream = getClass().getResourceAsStream(path);
-            if (inputStream == null) {
-                log.debug("Skipper's Ledger icon resource not found: {}", path);
-                return null;
-            }
-
-            BufferedImage image = ImageIO.read(inputStream);
-            if (image == null) {
-                log.debug("Skipper's Ledger icon is not a readable image: {}", path);
-                return null;
-            }
-
-            Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
-            return new ImageIcon(scaled);
-        } catch (IOException | IllegalArgumentException e) {
-            log.warn("Skipper's Ledger unable to load icon {}", path, e);
-            return null;
-        }
     }
 
     private JButton createCompactButton(String text, String tooltip) {
